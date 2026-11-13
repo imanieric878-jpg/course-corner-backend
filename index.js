@@ -15,8 +15,12 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'x-paystack-signature']
 }));
 
-// Body Parsers
-app.use(express.json());
+// Body Parsers (with rawBody capture for exact Paystack HMAC verification)
+app.use(express.json({
+    verify: (req, res, buf) => {
+        req.rawBody = buf;
+    }
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // --- Supabase Client Setup ---
@@ -218,13 +222,24 @@ const handlePaystackWebhook = async (req, res) => {
     try {
         // Validate Paystack HMAC SHA-512 signature
         const signature = req.headers['x-paystack-signature'];
-        if (paystackSecretKey && signature) {
-            const hash = crypto
-                .createHmac('sha512', paystackSecretKey)
-                .update(JSON.stringify(req.body))
-                .digest('hex');
+        const webhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET || paystackSecretKey;
 
-            if (hash !== signature) {
+        if (signature && (webhookSecret || paystackSecretKey)) {
+            const checkSecret = (sec) => {
+                if (!sec) return null;
+                const hmac = crypto.createHmac('sha512', sec);
+                if (req.rawBody) {
+                    hmac.update(req.rawBody);
+                } else {
+                    hmac.update(JSON.stringify(req.body));
+                }
+                return hmac.digest('hex');
+            };
+
+            const hashPrimary = checkSecret(webhookSecret);
+            const hashFallback = checkSecret(paystackSecretKey);
+
+            if (hashPrimary !== signature && hashFallback !== signature) {
                 console.warn('⚠️ Webhook signature mismatch. Request rejected.');
                 return res.status(401).send('Invalid signature');
             }
