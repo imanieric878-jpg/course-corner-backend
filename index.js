@@ -122,7 +122,7 @@ const handlePaymentInit = async (req, res) => {
                     currency: 'KES',
                     reference,
                     mobile_money: {
-                        phone: numericPhone,
+                        phone: formattedPhone,
                         provider: 'mpesa'
                     },
                     metadata: {
@@ -140,7 +140,7 @@ const handlePaymentInit = async (req, res) => {
             );
 
             paystackResponseData = chargeResponse.data?.data;
-            console.log('✅ Paystack Charge initiated:', paystackResponseData?.status);
+            console.log('✅ Paystack Charge initiated successfully:', paystackResponseData?.status);
         } catch (chargeErr) {
             console.warn('Direct charge failed, falling back to transaction initialize:', chargeErr.response?.data?.message || chargeErr.message);
 
