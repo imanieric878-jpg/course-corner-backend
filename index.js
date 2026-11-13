@@ -153,7 +153,7 @@ const handlePaymentInit = async (req, res) => {
                     currency: 'KES',
                     reference,
                     channels: ['mobile_money', 'card'],
-                    callback_url: `${(process.env.BACKEND_URL || '').replace(/\/$/, '')}/api/payment/callback`,
+                    callback_url: `${(process.env.FRONTEND_URL || 'https://course-corner-psi.vercel.app').replace(/\/$/, '')}/?payment=completed&ref=${reference}`,
                     metadata: {
                         sessionId,
                         category: category || 'Course Calculator',
@@ -431,7 +431,19 @@ app.get('/', (req, res) => {
 });
 
 app.get('/api/ping', (req, res) => {
-    res.json({ ok: true, version: VERSION, timestamp: Date.now() });
+    const keyLoaded = !!(process.env.PAYSTACK_SECRET_KEY);
+    const keyPrefix = process.env.PAYSTACK_SECRET_KEY ? process.env.PAYSTACK_SECRET_KEY.substring(0, 12) + '...' : 'NOT SET';
+    const isDemo = !process.env.PAYSTACK_SECRET_KEY || 
+                   process.env.PAYSTACK_SECRET_KEY === 'demo' || 
+                   process.env.PAYSTACK_SECRET_KEY.includes('your_key_here') ||
+                   process.env.PAYSTACK_SECRET_KEY.includes('paste_your');
+    res.json({ 
+        ok: true, 
+        version: VERSION, 
+        timestamp: Date.now(),
+        paystack: { keyLoaded, keyPrefix, isDemo },
+        supabase: { configured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) }
+    });
 });
 
 // Start Server
