@@ -400,11 +400,11 @@ app.post('/api/payment/has-access', async (req, res) => {
     }
 });
 
-// 5. Verify M-Pesa Code Manually
+// 5. Verify M-Pesa Code Manually (Option A: 1 Payment = 1 Student Report, Single-Use)
 app.post('/api/mpesa/verify-mpesa-code', async (req, res) => {
     try {
         const { mpesaCode } = req.body;
-        if (!mpesaCode) return res.status(400).json({ success: false, message: 'Code required.' });
+        if (!mpesaCode) return res.status(400).json({ success: false, message: 'M-Pesa code is required.' });
         if (!supabase) return res.status(500).json({ success: false, message: 'Database not initialized.' });
 
         const trimmed = mpesaCode.trim().toUpperCase();
@@ -416,10 +416,32 @@ app.post('/api/mpesa/verify-mpesa-code', async (req, res) => {
             .limit(1);
 
         if (error || !data || data.length === 0) {
-            return res.status(404).json({ success: false, message: 'Transaction code not found or not yet confirmed.' });
+            return res.status(404).json({ success: false, message: 'Transaction code not found or payment not yet confirmed by Safaricom/Paystack.' });
         }
 
-        return res.json({ success: true, data: data[0] });
+        const payment = data[0];
+
+        // OPTION A: One-time use protection (prevents code sharing between different students)
+        if (payment.metadata?.claimed) {
+            return res.status(400).json({
+                success: false,
+                message: 'This M-Pesa code has already been used to unlock results. Each calculation requires its own payment.'
+            });
+        }
+
+        // Mark as claimed in Supabase so it cannot be used again
+        const updatedMetadata = {
+            ...(payment.metadata || {}),
+            claimed: true,
+            claimed_at: new Date().toISOString()
+        };
+
+        await supabase
+            .from('payments')
+            .update({ metadata: updatedMetadata, updated_at: new Date().toISOString() })
+            .eq('id', payment.id);
+
+        return res.json({ success: true, data: payment });
     } catch (e) {
         return res.status(500).json({ success: false, message: e.message });
     }
@@ -433,13 +455,13 @@ app.get('/', (req, res) => {
 app.get('/api/ping', (req, res) => {
     const keyLoaded = !!(process.env.PAYSTACK_SECRET_KEY);
     const keyPrefix = process.env.PAYSTACK_SECRET_KEY ? process.env.PAYSTACK_SECRET_KEY.substring(0, 12) + '...' : 'NOT SET';
-    const isDemo = !process.env.PAYSTACK_SECRET_KEY || 
-                   process.env.PAYSTACK_SECRET_KEY === 'demo' || 
-                   process.env.PAYSTACK_SECRET_KEY.includes('your_key_here') ||
-                   process.env.PAYSTACK_SECRET_KEY.includes('paste_your');
-    res.json({ 
-        ok: true, 
-        version: VERSION, 
+    const isDemo = !process.env.PAYSTACK_SECRET_KEY ||
+        process.env.PAYSTACK_SECRET_KEY === 'demo' ||
+        process.env.PAYSTACK_SECRET_KEY.includes('your_key_here') ||
+        process.env.PAYSTACK_SECRET_KEY.includes('paste_your');
+    res.json({
+        ok: true,
+        version: VERSION,
         timestamp: Date.now(),
         paystack: { keyLoaded, keyPrefix, isDemo },
         supabase: { configured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) }
